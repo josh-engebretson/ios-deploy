@@ -46,7 +46,9 @@ def run_command(debugger, command, result, internal_dict):
     args_arr = []
     if len(args) > 1:
         args_arr = shlex.split(args[1])
-    args_arr = args_arr + shlex.split('{args}')
+
+    # EPIC: Specify not to use posix to maintain quotes, newlines, etc in passed arguments
+    args_arr = args_arr + shlex.split('{args}', posix=False)
 
     launchInfo = lldb.SBLaunchInfo(args_arr)
     global listener
