@@ -27,9 +27,12 @@
  * log enable -v -f /Users/vargaz/lldb.log lldb all
  * log enable -v -f /Users/vargaz/gdb-remote.log gdb-remote all
  */
+
+ // EPIC: modified to include disk_symbol_path
 #define LLDB_PREP_CMDS CFSTR("\
     platform select remote-ios --sysroot '{symbols_path}'\n\
     target create \"{disk_app}\"\n\
+    {disk_symbol_path}\
     script fruitstrap_device_app=\"{device_app}\"\n\
     script fruitstrap_connect_url=\"connect://127.0.0.1:{device_port}\"\n\
     script fruitstrap_output_path=\"{output_path}\"\n\
@@ -90,6 +93,7 @@ char *bundle_id = NULL;
 bool interactive = true;
 bool justlaunch = false;
 char *app_path = NULL;
+char *disk_symbol_path = NULL; // EPIC
 char *device_id = NULL;
 char *args = NULL;
 char *envs = NULL;
@@ -107,6 +111,12 @@ pid_t child = 0;
 const int SIGLLDB = SIGUSR1;
 NSString* tmpUUID;
 struct am_device_notification *notify;
+
+// EPIC BEGIN
+typedef void (*iter_callback) (struct afc_connection *, char const *, char *);
+void remove_path_recursively_conn(struct afc_connection *conn, char const *path);
+void remove_path_recursively(AMDeviceRef device);
+// EPIC END
 
 // Error codes we report on different failures, so scripts can distinguish between user app exit
 // codes and our exit codes. For non app errors we use codes in reserved 128-255 range.
@@ -757,6 +767,22 @@ void write_lldb_prep_cmds(AMDeviceRef device, CFURLRef disk_app_url) {
     CFStringFindAndReplace(cmds, CFSTR("{disk_app}"), disk_app_path, range, 0);
     range.length = CFStringGetLength(cmds);
 
+    // EPIC BEGIN
+	CFStringRef cf_disk_symbol_path;
+	if (!disk_symbol_path)
+	{
+		cf_disk_symbol_path = CFStringCreateWithCString(NULL, "", kCFStringEncodingUTF8);
+	
+	}
+	else
+	{
+		cf_disk_symbol_path = CFStringCreateWithFormat(NULL, NULL, CFSTR("add-dsym \"%s\"\n"), disk_symbol_path);
+	}
+	
+	CFStringFindAndReplace(cmds, CFSTR("{disk_symbol_path}"), cf_disk_symbol_path, range, 0);
+    range.length = CFStringGetLength(cmds);
+    // EPIC END
+
     CFStringRef device_port = CFStringCreateWithFormat(NULL, NULL, CFSTR("%d"), port);
     CFStringFindAndReplace(cmds, CFSTR("{device_port}"), device_port, range, 0);
     range.length = CFStringGetLength(cmds);
@@ -845,6 +871,7 @@ void write_lldb_prep_cmds(AMDeviceRef device, CFURLRef disk_app_url) {
     CFRelease(device_app_url);
     CFRelease(device_app_path);
     CFRelease(disk_app_path);
+    CFRelease(cf_disk_symbol_path); // EPIC
     CFRelease(device_container_url);
     CFRelease(device_container_path);
     CFRelease(dcp_noprivate);
@@ -1646,6 +1673,8 @@ void handle_device(AMDeviceRef device) {
             make_directory(device);
         } else if (strcmp("rm", command) == 0) {
             remove_path(device);
+        } else if (strcmp("rm_r", command) == 0) { // EPIC
+            remove_path_recursively(device);
         } else if (strcmp("exists", command) == 0) {
             exit(app_exists(device));
         } else if (strcmp("uninstall_only", command) == 0) {
@@ -1826,6 +1855,7 @@ void usage(const char* app) {
         @"  -i, --id <device_id>         the id of the device to connect to\n"
         @"  -c, --detect                 only detect if the device is connected\n"
         @"  -b, --bundle <bundle.app>    the path to the app bundle to be installed\n"
+        @"  -s, --symbols <pathname>     the path to symbols\n" // EPIC
         @"  -a, --args <args>            command line arguments to pass to the app when launching it\n"
         @"  -s, --envs <envs>            environment variables, space separated key-value pairs, to pass to the app when launching it\n"
         @"  -t, --timeout <timeout>      number of seconds to wait for a device to be connected\n"
@@ -1846,6 +1876,7 @@ void usage(const char* app) {
         @"  -2, --to <target pathname>   use together with up/download file/tree. specify target\n"
         @"  -D, --mkdir <dir>            make directory on device\n"
         @"  -R, --rm <path>              remove file or directory on device (directories must be empty)\n"
+        @"  -T, --rm_r <path>            remove file or directory recursively on device\n" // EPIC
         @"  -V, --version                print the executable version \n"
         @"  -e, --exists                 check if the app with given bundle_id is installed or not \n"
         @"  -B, --list_bundle_id         list bundle_id \n"
@@ -1876,6 +1907,7 @@ int main(int argc, char *argv[]) {
         { "debug", no_argument, NULL, 'd' },
         { "id", required_argument, NULL, 'i' },
         { "bundle", required_argument, NULL, 'b' },
+        { "symbols", required_argument, NULL, 's' }, // EPIC
         { "args", required_argument, NULL, 'a' },
         { "envs", required_argument, NULL, 's' },
         { "verbose", no_argument, NULL, 'v' },
@@ -1898,6 +1930,7 @@ int main(int argc, char *argv[]) {
         { "to", required_argument, NULL, '2'},
         { "mkdir", required_argument, NULL, 'D'},
         { "rm", required_argument, NULL, 'R'},
+        { "rm_r", required_argument, NULL, 'T'}, // EPIC
         { "exists", no_argument, NULL, 'e'},
         { "list_bundle_id", no_argument, NULL, 'B'},
         { "no-wifi", no_argument, NULL, 'W'},
@@ -1910,7 +1943,7 @@ int main(int argc, char *argv[]) {
     };
     int ch;
 
-    while ((ch = getopt_long(argc, argv, "VmcdvunrILeD:R:i:b:a:t:p:1:2:o:l:w:9BWjNs:OE:C", longopts, NULL)) != -1)
+    while ((ch = getopt_long(argc, argv, "VmcdvunrILeD:R:i:b:s:a:t:p:1:2:o:l:w:9BWjNs:OE:C", longopts, NULL)) != -1) // EPIC
     {
         switch (ch) {
         case 'm':
@@ -1925,6 +1958,9 @@ int main(int argc, char *argv[]) {
             break;
         case 'b':
             app_path = optarg;
+            break;
+        case 's':
+			disk_symbol_path = optarg; // EPIC
             break;
         case 'a':
             args = optarg;
@@ -2005,6 +2041,11 @@ int main(int argc, char *argv[]) {
             target_filename = optarg;
             command = "rm";
             break;
+        case 'T': // EPIC
+            command_only = true;
+            target_filename = optarg;
+            command = "rm_r";
+            break;            
         case 'e':
             command_only = true;
             command = "exists";
@@ -2078,3 +2119,65 @@ int main(int argc, char *argv[]) {
     AMDeviceNotificationSubscribe(&device_callback, 0, 0, NULL, &notify);
     CFRunLoopRun();
 }
+
+// EPIC BEGIN
+void iter_dir(struct afc_connection *conn, char const *path, iter_callback callback) {
+    struct afc_directory *dir;
+    char *dirent;
+
+    if(AFCDirectoryOpen(conn, path, &dir))
+        return;
+
+    while(1) {
+        assert(AFCDirectoryRead(conn, dir, &dirent) == 0);
+
+        if (!dirent)
+            break;
+
+        if (strcmp(dirent, ".") == 0 || strcmp(dirent, "..") == 0)
+            continue;
+
+        callback(conn, path, dirent);
+    }
+}
+
+void remove_path_callback(struct afc_connection *conn, char const *path, char *dirent) {
+    char subdir[255];
+    snprintf(subdir, 255, "%s/%s", path, dirent);
+    remove_path_recursively_conn(conn, subdir);
+}
+
+void remove_path_recursively_conn(struct afc_connection *conn, char const *path) {
+    int ret = AFCRemovePath(conn, path);
+    if(ret == 0 || ret == 8) {
+        // Successfully removed (it was empty) or does not exist
+        NSLogVerbose(@"Deleted %s", path);
+        return;
+    }
+
+    iter_dir(conn, path, (iter_callback) remove_path_callback);
+
+    ret = AFCRemovePath(conn, path);
+
+    if (ret == 10)
+    {
+        // No permissions for deleting folder
+        NSLogVerbose(@"No permissions for delete %s", path);
+        return;
+    }
+
+    NSLogVerbose(@"Deleted %s", path);
+}
+
+void remove_path_recursively(AMDeviceRef device) {
+    service_conn_t houseFd = start_house_arrest_service(device);
+
+    afc_connection afc_conn;
+    afc_connection* afc_conn_p = &afc_conn;
+    AFCConnectionOpen(houseFd, 0, &afc_conn_p);
+
+    remove_path_recursively_conn(afc_conn_p, target_filename);
+
+    assert(AFCConnectionClose(afc_conn_p) == 0);
+}
+// EPIC END

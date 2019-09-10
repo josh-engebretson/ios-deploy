@@ -46,7 +46,8 @@ def run_command(debugger, command, result, internal_dict):
     args_arr = []
     if len(args) > 1:
         args_arr = shlex.split(args[1])
-    args_arr = args_arr + shlex.split('{args}')
+    # EPIC: Specify not to use posix to maintain quotes, newlines, etc in passed arguments
+    args_arr = args_arr + shlex.split('{args}', posix=False)
 
     launchInfo = lldb.SBLaunchInfo(args_arr)
     global listener
@@ -156,12 +157,14 @@ def autoexit_command(debugger, command, result, internal_dict):
             os._exit(process.GetExitStatus())
         elif printBacktraceTime is None and state == lldb.eStateStopped:
             sys.stdout.write( '\\nPROCESS_STOPPED\\n' )
-            debugger.HandleCommand('bt')
+            # EPIC:
+            debugger.HandleCommand('thread backtrace all -c 50')
             CloseOut()
             os._exit({exitcode_app_crash})
         elif state == lldb.eStateCrashed:
             sys.stdout.write( '\\nPROCESS_CRASHED\\n' )
-            debugger.HandleCommand('bt')
+            # EPIC:
+            debugger.HandleCommand('thread backtrace all -c 50')
             CloseOut()
             os._exit({exitcode_app_crash})
         elif state == lldb.eStateDetached:
