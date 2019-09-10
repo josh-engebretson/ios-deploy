@@ -1907,7 +1907,7 @@ int main(int argc, char *argv[]) {
         { "debug", no_argument, NULL, 'd' },
         { "id", required_argument, NULL, 'i' },
         { "bundle", required_argument, NULL, 'b' },
-        { "symbols", required_argument, NULL, 's' }, // EPIC
+        { "symbols", required_argument, NULL, 'S' }, // EPIC
         { "args", required_argument, NULL, 'a' },
         { "envs", required_argument, NULL, 's' },
         { "verbose", no_argument, NULL, 'v' },
@@ -1943,7 +1943,7 @@ int main(int argc, char *argv[]) {
     };
     int ch;
 
-    while ((ch = getopt_long(argc, argv, "VmcdvunrILeD:R:i:b:s:a:t:p:1:2:o:l:w:9BWjNs:OE:C", longopts, NULL)) != -1) // EPIC
+    while ((ch = getopt_long(argc, argv, "VmcdvunrILeD:R:i:b:S:a:t:p:1:2:o:l:w:9BWjNs:OE:C", longopts, NULL)) != -1) // EPIC
     {
         switch (ch) {
         case 'm':
@@ -1959,7 +1959,7 @@ int main(int argc, char *argv[]) {
         case 'b':
             app_path = optarg;
             break;
-        case 's':
+        case 'S':
 			disk_symbol_path = optarg; // EPIC
             break;
         case 'a':
